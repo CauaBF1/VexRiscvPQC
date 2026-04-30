@@ -538,6 +538,15 @@ object MuraxWithRamInit{
   }
 }
 
+object MuraxCrystalKyberWithRamInit{
+  def main(args: Array[String]) {
+    SpinalVerilog(Murax(MuraxConfig.default.copy(
+      onChipRamSize = 128 kB,
+      onChipRamHexFile = "src/main/c/murax/crystal_kyber/build/crystal_kyber.hex"
+    )))
+  }
+}
+
 object MuraxWithRamInitWithNativeJtag{
   def main(args: Array[String]) {
     val coreFrequency = if (args.nonEmpty) HertzNumber(BigDecimal(args(0))) else MuraxConfig.default.coreFrequency
