@@ -19,22 +19,11 @@ LIBS =
 LIBSINC = -L$(OBJDIR)
 LDSCRIPT = ./src/linker.ld
 
-SIFIVE_GCC_PACK ?= yes
-
-ifeq ($(SIFIVE_GCC_PACK),yes)
-	RISCV_NAME ?= riscv64-unknown-elf
-	RISCV_PATH ?= /opt/riscv/
-else
-	RISCV_NAME ?= riscv32-unknown-elf
-	ifeq ($(MULDIV),yes)
-		RISCV_PATH ?= /opt/riscv32im/
-	else
-		RISCV_PATH ?= /opt/riscv32i/
-	endif
-endif
+RISCV_NAME ?= riscv32-none-elf
+RISCV_PATH ?= /opt/riscv-ricstar
 
 MABI=ilp32
-MARCH := rv32i
+MARCH := rv32i_zicsr
 ifeq ($(MULDIV),yes)
 	MARCH := $(MARCH)m
 endif
@@ -55,12 +44,6 @@ endif
 
 ifeq ($(BENCH),yes)
 	CFLAGS += -fno-inline
-endif
-
-ifeq ($(SIFIVE_GCC_PACK),yes)
-	RISCV_CLIB=$(RISCV_PATH)/$(RISCV_NAME)/lib/$(MARCH)/$(MABI)/
-else
-	RISCV_CLIB=$(RISCV_PATH)/$(RISCV_NAME)/lib/
 endif
 
 RISCV_OBJCOPY = $(RISCV_PATH)/bin/$(RISCV_NAME)-objcopy
@@ -118,8 +101,10 @@ $(OBJDIR):
 .PHONY: clean
 clean:
 	rm -rf $(OBJDIR)/src
+	rm -rf $(OBJDIR)/kyber
 	rm -f $(OBJDIR)/$(PROJ_NAME).elf
 	rm -f $(OBJDIR)/$(PROJ_NAME).hex
+	rm -f $(OBJDIR)/$(PROJ_NAME).bin
 	rm -f $(OBJDIR)/$(PROJ_NAME).map
 	rm -f $(OBJDIR)/$(PROJ_NAME).v
 	rm -f $(OBJDIR)/$(PROJ_NAME).asm

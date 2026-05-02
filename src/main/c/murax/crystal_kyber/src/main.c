@@ -28,6 +28,25 @@ static void print_hex32(uint32_t value) {
   }
 }
 
+static void print_hex8(uint8_t value) {
+  uint8_t high = (value >> 4) & 0xF;
+  uint8_t low = value & 0xF;
+
+  uart_write(UART, high < 10 ? ('0' + high) : ('A' + high - 10));
+  uart_write(UART, low < 10 ? ('0' + low) : ('A' + low - 10));
+}
+
+static void print_bytes_prefix(const char *label, const uint8_t *buffer, uint32_t count) {
+  print(label);
+  print("=");
+
+  for (uint32_t i = 0; i < count; i++) {
+    print_hex8(buffer[i]);
+  }
+
+  uart_write(UART, '\n');
+}
+
 static inline uint32_t read_cycle(void) {
   uint32_t value;
   asm volatile("rdcycle %0" : "=r"(value));
@@ -58,11 +77,10 @@ static void print_cycles(const char *label, uint32_t cycles) {
   uart_write(UART, '\n');
 }
 
-void main(void) {
-  GPIO_A->OUTPUT_ENABLE = 0x0000000F;
-  GPIO_A->OUTPUT = 0x00000001;
-
-  println("Murax ML-KEM-512 start");
+static void run_round(uint32_t round) {
+  print("round=");
+  print_hex32(round);
+  uart_write(UART, '\n');
 
   uint32_t start_keypair = read_cycle();
   int keypair_ret = PQCLEAN_MLKEM512_CLEAN_crypto_kem_keypair(pk, sk);
@@ -81,9 +99,24 @@ void main(void) {
   print_result("dec_ret", dec_ret);
   print_result("ss_match", shared_secret_matches());
 
+  print_bytes_prefix("pk_prefix", pk, 8);
+  print_bytes_prefix("ct_prefix", ct, 8);
+  print_bytes_prefix("ss1_prefix", ss1, 8);
+  print_bytes_prefix("ss2_prefix", ss2, 8);
+
   print_cycles("cycles_keypair", end_keypair - start_keypair);
   print_cycles("cycles_enc", end_enc - start_enc);
   print_cycles("cycles_dec", end_dec - start_dec);
+}
+
+void main(void) {
+  GPIO_A->OUTPUT_ENABLE = 0x0000000F;
+  GPIO_A->OUTPUT = 0x00000001;
+
+  println("Murax ML-KEM-512 start");
+
+  run_round(1);
+  run_round(2);
 
   println("done");
 

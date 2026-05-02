@@ -53,17 +53,34 @@ void *malloc(size_t size) {
     heap_current = (uintptr_t)&_heap_start;
   }
 
-  uintptr_t start = align_up(heap_current, sizeof(uintptr_t));
-  uintptr_t end = start + size;
+  uintptr_t header = align_up(heap_current, 8u);
+  uintptr_t start = header + sizeof(uintptr_t);
+  uintptr_t end = align_up(start + size, 8u);
 
   if (end > (uintptr_t)&_heap_end) {
     return 0;
   }
 
+  *((uintptr_t *)header) = end - header;
   heap_current = end;
   return (void *)start;
 }
 
 void free(void *ptr) {
-  (void)ptr;
+  if (ptr == 0) {
+    return;
+  }
+
+  uintptr_t header = (uintptr_t)ptr - sizeof(uintptr_t);
+  uintptr_t size = *((uintptr_t *)header);
+
+  if (header + size == heap_current) {
+    heap_current = header;
+  }
+}
+
+void exit(int status) {
+  (void)status;
+  while (1) {
+  }
 }
