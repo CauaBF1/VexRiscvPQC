@@ -3,6 +3,7 @@ DEBUG=no
 BENCH=no
 MULDIV=no
 COMPRESSED=no
+BENCH_ROUNDS ?= 2
 
 ROOT := ../../../../..
 KYBER_DIR := $(ROOT)/kyber_implementation
@@ -31,7 +32,7 @@ ifeq ($(COMPRESSED),yes)
 	MARCH := $(MARCH)ac
 endif
 
-CFLAGS += -march=$(MARCH) -mabi=$(MABI) -DNDEBUG
+CFLAGS += -march=$(MARCH) -mabi=$(MABI) -DNDEBUG -DBENCH_ROUNDS=$(BENCH_ROUNDS)
 LDFLAGS += -march=$(MARCH) -mabi=$(MABI)
 
 ifeq ($(DEBUG),yes)

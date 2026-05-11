@@ -3,6 +3,10 @@
 #include "api.h"
 #include "murax.h"
 
+#ifndef BENCH_ROUNDS
+#define BENCH_ROUNDS 2u
+#endif
+
 static uint8_t pk[PQCLEAN_MLKEM512_CLEAN_CRYPTO_PUBLICKEYBYTES];
 static uint8_t sk[PQCLEAN_MLKEM512_CLEAN_CRYPTO_SECRETKEYBYTES];
 static uint8_t ct[PQCLEAN_MLKEM512_CLEAN_CRYPTO_CIPHERTEXTBYTES];
@@ -115,8 +119,9 @@ void main(void) {
 
   println("Murax ML-KEM-512 start");
 
-  run_round(1);
-  run_round(2);
+  for (uint32_t round = 1; round <= BENCH_ROUNDS; round++) {
+    run_round(round);
+  }
 
   println("done");
 

@@ -540,10 +540,18 @@ object MuraxWithRamInit{
 
 object MuraxCrystalKyberWithRamInit{
   def main(args: Array[String]) {
-    SpinalVerilog(Murax(MuraxConfig.default.copy(
+    val config = MuraxConfig.default.copy(
       onChipRamSize = 128 kB,
       onChipRamHexFile = "src/main/c/murax/crystal_kyber/build/crystal_kyber.hex"
-    )))
+    )
+
+    config.cpuPlugins(config.cpuPlugins.indexWhere(_.isInstanceOf[CsrPlugin])) =
+      new CsrPlugin(CsrPluginConfig.smallest(mtvecInit = 0x80000020l).copy(
+        mcycleAccess = CsrAccess.READ_WRITE,
+        ucycleAccess = CsrAccess.READ_ONLY
+      ))
+
+    SpinalVerilog(Murax(config))
   }
 }
 
