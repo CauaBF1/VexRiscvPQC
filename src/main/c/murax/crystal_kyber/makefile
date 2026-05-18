@@ -3,6 +3,7 @@ DEBUG=no
 BENCH=no
 MULDIV=no
 COMPRESSED=no
+KAT ?= no
 BENCH_ROUNDS ?= 2
 
 ROOT := ../../../../..
@@ -12,6 +13,14 @@ APP_C_SRCS := $(wildcard src/*.c)
 APP_CPP_SRCS := $(wildcard src/*.cpp)
 APP_ASM_SRCS := $(wildcard src/*.S)
 KYBER_C_SRCS := $(wildcard $(KYBER_DIR)/*.c)
+
+ifeq ($(KAT),yes)
+	APP_C_SRCS := $(filter-out src/main.c,$(APP_C_SRCS))
+	KYBER_C_SRCS := $(filter-out $(KYBER_DIR)/randombytes.c,$(KYBER_C_SRCS))
+	CFLAGS += -DKAT_MODE=1
+else
+	APP_C_SRCS := $(filter-out src/main_kat.c src/kat_randombytes.c,$(APP_C_SRCS))
+endif
 
 OBJDIR = build
 
