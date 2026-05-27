@@ -7,30 +7,29 @@ KAT ?= no
 BENCH_ROUNDS ?= 2
 
 ROOT := ../../../../..
-KYBER_DIR := $(ROOT)/kyber_implementation
+MLKEM_NATIVE_DIR := $(ROOT)/external/mlkem-native/mlkem
 
 APP_C_SRCS := $(wildcard src/*.c)
 APP_CPP_SRCS := $(wildcard src/*.cpp)
 APP_ASM_SRCS := $(wildcard src/*.S)
-KYBER_C_SRCS := $(wildcard $(KYBER_DIR)/*.c)
+MLKEM_NATIVE_C_SRCS := $(MLKEM_NATIVE_DIR)/mlkem_native.c
 
 ifeq ($(KAT),yes)
 	APP_C_SRCS := $(filter-out src/main.c,$(APP_C_SRCS))
-	KYBER_C_SRCS := $(filter-out $(KYBER_DIR)/randombytes.c,$(KYBER_C_SRCS))
 	CFLAGS += -DKAT_MODE=1
 else
-	APP_C_SRCS := $(filter-out src/main_kat.c src/kat_randombytes.c,$(APP_C_SRCS))
+	APP_C_SRCS := $(filter-out src/main_kat.c,$(APP_C_SRCS))
 endif
 
 OBJDIR = build
 
-INC  = -I./src -I$(KYBER_DIR)
+INC  = -I./src -I$(MLKEM_NATIVE_DIR)
 LIBS =
 LIBSINC = -L$(OBJDIR)
 LDSCRIPT = ./src/linker.ld
 
-RISCV_NAME ?= riscv32-none-elf
-RISCV_PATH ?= /opt/riscv-ricstar
+RISCV_NAME ?= riscv64-unknown-elf
+RISCV_PATH ?= /home/borgescaua/opt/riscv-elf-multilib
 
 MABI=ilp32
 MARCH := rv32i_zicsr
@@ -42,6 +41,7 @@ ifeq ($(COMPRESSED),yes)
 endif
 
 CFLAGS += -march=$(MARCH) -mabi=$(MABI) -DNDEBUG -DBENCH_ROUNDS=$(BENCH_ROUNDS)
+CFLAGS += -DMLK_CONFIG_FILE=\"mlkem_native_murax_config.h\"
 LDFLAGS += -march=$(MARCH) -mabi=$(MABI)
 
 ifeq ($(DEBUG),yes)
@@ -66,9 +66,9 @@ LDFLAGS += -nostdlib -lgcc -mcmodel=medany -nostartfiles -ffreestanding -Wl,-Bst
 APP_C_OBJS := $(patsubst src/%.c,$(OBJDIR)/src/%.o,$(APP_C_SRCS))
 APP_CPP_OBJS := $(patsubst src/%.cpp,$(OBJDIR)/src/%.o,$(APP_CPP_SRCS))
 APP_ASM_OBJS := $(patsubst src/%.S,$(OBJDIR)/src/%.o,$(APP_ASM_SRCS))
-KYBER_C_OBJS := $(patsubst $(KYBER_DIR)/%.c,$(OBJDIR)/kyber/%.o,$(KYBER_C_SRCS))
+MLKEM_NATIVE_C_OBJS := $(patsubst $(MLKEM_NATIVE_DIR)/%.c,$(OBJDIR)/mlkem-native/%.o,$(MLKEM_NATIVE_C_SRCS))
 
-OBJS := $(APP_C_OBJS) $(APP_CPP_OBJS) $(APP_ASM_OBJS) $(KYBER_C_OBJS)
+OBJS := $(APP_C_OBJS) $(APP_CPP_OBJS) $(APP_ASM_OBJS) $(MLKEM_NATIVE_C_OBJS)
 
 all: $(OBJDIR)/$(PROJ_NAME).elf $(OBJDIR)/$(PROJ_NAME).hex $(OBJDIR)/$(PROJ_NAME).bin $(OBJDIR)/$(PROJ_NAME).asm $(OBJDIR)/$(PROJ_NAME).v
 
@@ -100,7 +100,7 @@ $(OBJDIR)/%.o: %.S
 	mkdir -p $(dir $@)
 	$(RISCV_CC) -c $(CFLAGS) -o $@ $^ -D__ASSEMBLY__=1
 
-$(OBJDIR)/kyber/%.o: $(KYBER_DIR)/%.c
+$(OBJDIR)/mlkem-native/%.o: $(MLKEM_NATIVE_DIR)/%.c
 	mkdir -p $(dir $@)
 	$(RISCV_CC) -c $(CFLAGS) $(INC) -o $@ $^
 	$(RISCV_CC) -S $(CFLAGS) $(INC) -o $@.disasm $^
@@ -111,7 +111,7 @@ $(OBJDIR):
 .PHONY: clean
 clean:
 	rm -rf $(OBJDIR)/src
-	rm -rf $(OBJDIR)/kyber
+	rm -rf $(OBJDIR)/mlkem-native
 	rm -f $(OBJDIR)/$(PROJ_NAME).elf
 	rm -f $(OBJDIR)/$(PROJ_NAME).hex
 	rm -f $(OBJDIR)/$(PROJ_NAME).bin

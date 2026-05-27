@@ -1,24 +1,17 @@
 #!/usr/bin/env python3
 import argparse
-import hashlib
 import time
 import subprocess
 from pathlib import Path
 
-
-EXPECTED_NISTKAT_SHA256 = "c70041a761e01cd6426fa60e9fd6a4412c2be817386c8d0f3334898082512782"
-
 EXPECTED_FIELDS = {
-    "seed_ret": "0x00000000",
     "keypair_ret": "0x00000000",
     "enc_ret": "0x00000000",
     "dec_ret": "0x00000000",
-    "seed_match": "0x00000001",
     "pk_match": "0x00000001",
     "sk_match": "0x00000001",
     "ct_match": "0x00000001",
     "ss_match": "0x00000001",
-    "random_stream_ok": "0x00000001",
     "kat_pass": "0x00000001",
 }
 
@@ -34,27 +27,9 @@ def run_command(cmd: list[str], cwd: Path, timeout: int | None = None) -> None:
         raise SystemExit(proc.returncode)
 
 
-def check_reference_kat(pqclean_dir: Path) -> None:
-    test_dir = pqclean_dir / "test"
-    kat_bin = pqclean_dir / "bin" / "nistkat_ml-kem-512_clean"
-
-    if not test_dir.exists():
-        raise SystemExit(f"PQClean test dir not found: {test_dir}")
-
-    run_command(
-        ["make", "-C", str(test_dir), "nistkat", "SCHEME=ml-kem-512", "IMPLEMENTATION=clean"],
-        cwd=repo_root(),
-    )
-
-    print(f"$ {kat_bin} | sha256sum")
-    result = subprocess.run([str(kat_bin)], cwd=repo_root(), check=True, stdout=subprocess.PIPE)
-    digest = hashlib.sha256(result.stdout).hexdigest()
-    print(f"nistkat_sha256={digest}")
-
-    if digest != EXPECTED_NISTKAT_SHA256:
-        raise SystemExit(
-            f"Unexpected NIST KAT SHA-256: got {digest}, expected {EXPECTED_NISTKAT_SHA256}"
-        )
+def generate_reference_vectors(root: Path) -> None:
+    generator = root / "scripts" / "generate_mlkem512_kat_vectors.py"
+    run_command(["python3", str(generator)], cwd=root)
 
 
 def run_verilator_until_done(sim_dir: Path, log_path: Path, timeout: int) -> str:
@@ -143,9 +118,12 @@ def validate_output(output: str) -> None:
 
 def main() -> int:
     root = repo_root()
-    parser = argparse.ArgumentParser(description="Build and run ML-KEM-512 NIST KAT on Murax/VexRiscv.")
-    parser.add_argument("--pqclean", default="/home/borgescaua/PQClean", help="Path to PQClean checkout.")
-    parser.add_argument("--skip-reference", action="store_true", help="Do not rebuild/check the PC NIST KAT hash.")
+    parser = argparse.ArgumentParser(description="Build and run ML-KEM-512 KAT on Murax/VexRiscv.")
+    parser.add_argument(
+        "--skip-reference",
+        action="store_true",
+        help="Do not regenerate/check kat_vectors.h from the mlkem-native submodule.",
+    )
     parser.add_argument("--skip-build", action="store_true", help="Run only the existing Verilator binary.")
     parser.add_argument(
         "--log",
@@ -155,12 +133,11 @@ def main() -> int:
     parser.add_argument("--timeout", type=int, default=180, help="Reserved timeout value in seconds.")
     args = parser.parse_args()
 
-    pqclean_dir = Path(args.pqclean).expanduser().resolve()
     firmware_dir = root / "src" / "main" / "c" / "murax" / "crystal_kyber"
     sim_dir = root / "src" / "test" / "cpp" / "murax"
 
     if not args.skip_reference:
-        check_reference_kat(pqclean_dir)
+        generate_reference_vectors(root)
 
     if not args.skip_build:
         run_command(["make", "-B", "-C", str(firmware_dir), "KAT=yes", "all"], cwd=root)

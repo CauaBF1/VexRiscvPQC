@@ -1,3 +1,5 @@
+> Nota: este plano e historico e descreve a integracao antiga baseada em PQClean. O fluxo atual usa `external/mlkem-native`; veja `understanding/README_MLKEM512_Murax.md` e `understanding/MLKEM512_KAT_Murax.md`.
+
 Below is a **Codex-ready execution plan**. It is written so Codex can **generate all required files, structure, and glue code** to run PQClean Kyber on a **VexRiscv (SpinalHDL) baremetal SoC**. No testing phase is included—only what must exist to run.
 
 ------

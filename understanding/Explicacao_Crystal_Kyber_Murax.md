@@ -1,3 +1,5 @@
+> Nota: este documento e historico e descreve partes da integracao antiga baseada em `kyber_implementation`. O fluxo atual usa `external/mlkem-native`; veja `understanding/README_MLKEM512_Murax.md`.
+
 # Explicacao completa do alvo `c/murax/crystal_kyber`
 
 Este documento explica o alvo bare-metal criado em `src/main/c/murax/crystal_kyber`, os arquivos dentro de `src/main/c/murax/crystal_kyber/src` e a alteracao feita em `src/main/scala/vexriscv/demo/Murax.scala` com o objeto `MuraxCrystalKyberWithRamInit`.

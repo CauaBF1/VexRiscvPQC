@@ -1,116 +1,63 @@
-# ML-KEM-512 KAT no Murax/VexRiscv
+# KAT ML-KEM-512 no Murax com mlkem-native
 
-Este documento descreve o que foi feito para validar a implementação bare-metal do ML-KEM-512 no Murax/VexRiscv usando KAT, isto é, Known Answer Test.
+Este documento descreve o fluxo atual de validação KAT do ML-KEM-512 no Murax/VexRiscv. O KAT não depende mais de PQClean e não usa mais replay de `randombytes`. A referência agora vem do submodule `external/mlkem-native`.
 
-O objetivo do KAT é provar que o algoritmo executado dentro do SoC reproduz byte-a-byte uma saída de referência conhecida. Isso é mais forte do que apenas observar `ss_match=1`, porque `ss_match=1` mostra que encapsulamento e decapsulamento concordam entre si, mas não prova sozinho que os bytes produzidos são iguais aos de uma implementação de referência.
+## Objetivo
 
-## Contexto inicial
+O objetivo do KAT é provar que o firmware bare-metal executado no Murax gera exatamente os mesmos bytes esperados para ML-KEM-512 em um vetor conhecido:
 
-A implementação usada no Murax veio de:
+- chave pública `pk`;
+- chave secreta `sk`;
+- ciphertext `ct`;
+- shared secret `ss`.
 
-```text
-/home/borgescaua/PQClean/crypto_kem/ml-kem-512/clean
-```
+Quando `kat_pass=0x00000001`, o Murax/VexRiscv executou o algoritmo e reproduziu byte-a-byte o vetor usado como referência.
 
-Esses arquivos foram copiados para:
+## Fonte da referência
 
-```text
-kyber_implementation/
-```
-
-Para o benchmark funcional inicial, foi criado um `randombytes.c` simples baseado em `xorshift`. Ele é suficiente para bring-up, simulação e medição de ciclos, mas não é adequado como validação criptográfica formal. O motivo é que ele não reproduz o fluxo de aleatoriedade usado pelos vetores oficiais do NIST/PQClean.
-
-Por isso foi criado um modo separado de KAT. Esse modo não substitui o benchmark normal. Ele existe apenas para validar corretude contra uma saída conhecida.
-
-## Referência do PQClean
-
-Dentro do PQClean, os arquivos relevantes para KAT são:
+A referência vem do submodule:
 
 ```text
-/home/borgescaua/PQClean/test/crypto_kem/nistkat.c
-/home/borgescaua/PQClean/test/common/nistkatrng.c
-/home/borgescaua/PQClean/common/aes.c
-/home/borgescaua/PQClean/common/aes.h
+external/mlkem-native/
 ```
 
-O `nistkat.c` é o programa de referência do PQClean para gerar o vetor KAT. Ele executa o fluxo:
+O gerador usado é criado pelo próprio `mlkem-native`:
+
+```text
+external/mlkem-native/test/build/mlkem512/bin/gen_KAT512
+```
+
+O script do projeto que automatiza isso é:
+
+```text
+scripts/generate_mlkem512_kat_vectors.py
+```
+
+Esse script executa:
+
+```bash
+make -C external/mlkem-native kat_512
+```
+
+Depois roda o binário `gen_KAT512`, calcula o SHA-256 da saída completa e compara com o valor esperado do `mlkem-native`:
+
+```text
+0a2d61707a68c0cac7b2a5005def19994e4e2a25cf8dc512b1254cbaa25473c0
+```
+
+Se o hash não bater, o script falha e não aceita os vetores como referência.
+
+## Arquivo gerado
+
+O arquivo gerado para o firmware é:
+
+```text
+src/main/c/murax/crystal_kyber/src/kat_vectors.h
+```
+
+Ele contém:
 
 ```c
-entropy_input[i] = i;      // 48 bytes: 0, 1, 2, ...
-nist_kat_init(entropy_input, NULL, 256);
-randombytes(seed, 48);
-nist_kat_init(seed, NULL, 256);
-crypto_kem_keypair(pk, sk);
-crypto_kem_enc(ct, ss, pk);
-crypto_kem_dec(ss_dec, ct, sk);
-```
-
-O `nistkatrng.c` implementa o RNG usado pelo KAT, baseado em AES-256-CTR-DRBG. Esse RNG depende de `aes.c` e `aes.h`.
-
-## Verificação da referência no PC
-
-Primeiro foi compilado o gerador KAT do próprio PQClean:
-
-```bash
-make -C /home/borgescaua/PQClean/test nistkat SCHEME=ml-kem-512 IMPLEMENTATION=clean
-```
-
-Depois foi executado o binário gerado:
-
-```bash
-/home/borgescaua/PQClean/bin/nistkat_ml-kem-512_clean | sha256sum
-```
-
-O hash obtido foi:
-
-```text
-c70041a761e01cd6426fa60e9fd6a4412c2be817386c8d0f3334898082512782
-```
-
-Esse valor bate com o campo `nistkat-sha256` presente em:
-
-```text
-/home/borgescaua/PQClean/crypto_kem/ml-kem-512/META.yml
-```
-
-Isso confirmou que o vetor gerado no PC era a referência correta do PQClean para `ml-kem-512/clean`.
-
-## Decisão de implementação no Murax
-
-Havia duas opções possíveis:
-
-1. Portar o `nistkatrng.c` e também o `aes.c` para o firmware bare-metal.
-2. Reproduzir no Murax o mesmo fluxo de bytes gerado pelo `nistkatrng.c` no PC.
-
-Foi escolhida a segunda opção.
-
-O motivo é prático: portar o AES-256-CTR-DRBG inteiro aumentaria o firmware apenas para alimentar o teste, sem validar o ML-KEM em si. Como o objetivo do KAT é verificar se `pk`, `sk`, `ct` e `ss` batem com a referência, basta garantir que o `randombytes` usado no Murax entregue exatamente os mesmos bytes que o NIST DRBG entregaria naquele vetor.
-
-Assim, o Murax não precisa executar AES para o KAT. Ele apenas faz replay dos bytes oficiais já extraídos do fluxo NIST KAT.
-
-## Arquivos criados ou alterados
-
-Foram adicionados:
-
-```text
-src/main/c/murax/crystal_kyber/src/main_kat.c
-src/main/c/murax/crystal_kyber/src/kat_randombytes.c
-src/main/c/murax/crystal_kyber/src/kat_vectors.h
-scripts/run_mlkem512_kat.py
-```
-
-Foi alterado:
-
-```text
-src/main/c/murax/crystal_kyber/makefile
-```
-
-## `kat_vectors.h`
-
-O arquivo `kat_vectors.h` contém os vetores de referência extraídos do PQClean:
-
-```text
-kat_seed
 kat_keypair_coins
 kat_enc_coins
 kat_pk
@@ -119,228 +66,72 @@ kat_ct
 kat_ss
 ```
 
-Esses vetores correspondem ao `count = 0` do NIST KAT para ML-KEM-512.
+`kat_pk`, `kat_sk`, `kat_ct` e `kat_ss` são extraídos do primeiro vetor produzido por `gen_KAT512`.
 
-Os tamanhos esperados são:
-
-```text
-seed: 48 bytes
-keypair_coins: 64 bytes
-enc_coins: 32 bytes
-pk: 800 bytes
-sk: 1632 bytes
-ct: 768 bytes
-ss: 32 bytes
-```
-
-## `kat_randombytes.c`
-
-O arquivo `kat_randombytes.c` substitui o `randombytes.c` normal quando o firmware é compilado com `KAT=yes`.
-
-Ele implementa a mesma função esperada pelo PQClean:
+`kat_keypair_coins` e `kat_enc_coins` são derivados no script Python para alimentar as APIs determinísticas do `mlkem-native`:
 
 ```c
-int randombytes(uint8_t *output, size_t n);
+mlkem_keypair_derand(pk, sk, kat_keypair_coins);
+mlkem_enc_derand(ct, ss1, pk, kat_enc_coins);
+mlkem_dec(ss2, ct, sk);
 ```
 
-Em vez de usar `xorshift`, ele entrega os bytes de:
+Esse modelo elimina a necessidade de interceptar `randombytes`. O KAT passa a controlar diretamente os bytes de entrada usados por keypair e encapsulation. O arquivo `randombytes.c` ainda pode ser linkado como símbolo de fallback exigido por `mlkem_native.c`, mas ele não define o vetor KAT.
+
+## Firmware KAT
+
+O firmware específico de KAT é:
 
 ```text
-kat_seed
-kat_keypair_coins
-kat_enc_coins
+src/main/c/murax/crystal_kyber/src/main_kat.c
 ```
 
-na mesma ordem em que o fluxo KAT precisa consumi-los.
+Ele executa este fluxo:
 
-Também existe controle de overflow:
+1. chama `mlkem_keypair_derand` com `kat_keypair_coins`;
+2. chama `mlkem_enc_derand` com `kat_enc_coins`;
+3. chama `mlkem_dec` com o ciphertext gerado;
+4. compara `pk`, `sk`, `ct` e `ss` com os arrays de `kat_vectors.h`;
+5. imprime uma métrica por linha pela UART.
 
-```c
-kat_randombytes_reset();
-kat_randombytes_overflow();
-```
+O arquivo antigo `kat_randombytes.c` não faz parte do fluxo atual. O KAT não usa replay de `randombytes`; ele usa as APIs determinísticas do `mlkem-native`.
 
-Se o algoritmo pedir mais bytes do que o vetor KAT fornece, `random_stream_ok` vira `0`. Isso evita falso positivo caso o fluxo de chamadas mude ou algum consumo inesperado de aleatoriedade aconteça.
+## Execução automática
 
-## `main_kat.c`
-
-O arquivo `main_kat.c` é o firmware bare-metal específico do KAT. Ele faz:
-
-```c
-randombytes(seed, 48);
-crypto_kem_keypair(pk, sk);
-crypto_kem_enc(ct, ss1, pk);
-crypto_kem_dec(ss2, ct, sk);
-```
-
-Depois compara byte-a-byte:
-
-```text
-seed == kat_seed
-pk == kat_pk
-sk == kat_sk
-ct == kat_ct
-ss1 == kat_ss
-ss2 == kat_ss
-```
-
-O firmware imprime:
-
-```text
-seed_ret
-keypair_ret
-enc_ret
-dec_ret
-seed_match
-pk_match
-sk_match
-ct_match
-ss_match
-random_stream_ok
-kat_pass
-```
-
-O teste só passa se todos os retornos forem zero e todas as comparações forem `1`.
-
-## Alteração no Makefile
-
-Foi adicionado o parâmetro:
-
-```make
-KAT ?= no
-```
-
-Quando `KAT=yes`, o Makefile:
-
-- remove `src/main.c` da compilação;
-- usa `src/main_kat.c`;
-- usa `src/kat_randombytes.c`;
-- remove `kyber_implementation/randombytes.c`;
-- adiciona `-DKAT_MODE=1`.
-
-Isso evita conflito de símbolos, porque o firmware não pode ter dois `main()` nem duas implementações de `randombytes()`.
-
-Comando para compilar o firmware KAT:
+Para gerar os vetores, compilar o firmware, regenerar o Murax, compilar o Verilator e validar a saída:
 
 ```bash
-make -B -C src/main/c/murax/crystal_kyber KAT=yes all
+python3 scripts/run_mlkem512_kat.py
 ```
 
-O firmware KAT compilado ocupou aproximadamente:
+Esse script faz:
 
-```text
-73340 B de RAM / 128 KiB
-```
+1. gera `kat_vectors.h` a partir do `mlkem-native`;
+2. compila o firmware com `KAT=yes`;
+3. executa `sbt "runMain vexriscv.demo.MuraxCrystalKyberWithRamInit"`;
+4. executa `make -B -C src/test/cpp/murax compile`;
+5. roda `src/test/cpp/murax/obj_dir/VMurax`;
+6. para a simulação quando encontra `done`;
+7. valida automaticamente os campos esperados.
 
-Ou seja, permaneceu dentro da RAM configurada para o Murax.
-
-## Erro encontrado
-
-Na primeira tentativa, o KAT foi implementado usando um bloco contínuo de 96 bytes para alimentar o `randombytes` depois da `seed`.
-
-A lógica inicial era equivalente a:
-
-```text
-seed: 48 bytes
-coins: 96 bytes
-```
-
-Essa tentativa gerou o seguinte resultado no Verilator:
-
-```text
-seed_match=0x00000001
-pk_match=0x00000001
-sk_match=0x00000001
-ct_match=0x00000000
-ss_match=0x00000000
-random_stream_ok=0x00000001
-kat_pass=0x00000000
-```
-
-Interpretação do erro:
-
-- `seed_match=1` mostrou que os primeiros 48 bytes estavam corretos.
-- `pk_match=1` e `sk_match=1` mostraram que o `keypair` estava correto.
-- `ct_match=0` e `ss_match=0` mostraram que o encapsulamento não estava recebendo os mesmos bytes aleatórios da referência.
-
-## Causa do erro
-
-A causa foi o funcionamento interno do NIST AES-CTR-DRBG usado pelo PQClean.
-
-O erro foi assumir que os 64 bytes usados pelo `keypair` e os 32 bytes usados pelo `encapsulation` poderiam ser extraídos como um único bloco contínuo de 96 bytes:
-
-```c
-randombytes(coins, 96);
-```
-
-Mas esse não é o comportamento real do KAT.
-
-No fluxo real, o PQClean chama:
-
-```c
-randombytes(coins, 64);  // dentro de crypto_kem_keypair
-randombytes(coins, 32);  // dentro de crypto_kem_enc
-```
-
-O NIST DRBG atualiza seu estado ao final de cada chamada de `randombytes`. Portanto:
-
-```text
-randombytes(96)
-```
-
-não produz o mesmo fluxo que:
-
-```text
-randombytes(64)
-randombytes(32)
-```
-
-Mesmo que a soma dos bytes seja 96, os bytes finais são diferentes porque existe atualização de estado entre as duas chamadas.
-
-Por isso `pk` e `sk` estavam corretos, mas `ct` e `ss` falhavam.
-
-## Correção aplicada
-
-A correção foi separar os vetores aleatórios em duas partes:
-
-```text
-kat_keypair_coins: 64 bytes
-kat_enc_coins: 32 bytes
-```
-
-Depois, `kat_randombytes.c` foi ajustado para entregar os bytes na ordem correta:
-
-```text
-kat_seed
-kat_keypair_coins
-kat_enc_coins
-```
-
-Com isso, o replay passou a respeitar as chamadas reais de `randombytes` feitas pelo ML-KEM:
-
-```text
-1. randombytes(seed, 48)
-2. randombytes(..., 64) durante keypair
-3. randombytes(..., 32) durante encapsulation
-```
-
-Após essa correção, o resultado passou a ser:
-
-```text
-seed_match=0x00000001
-pk_match=0x00000001
-sk_match=0x00000001
-ct_match=0x00000001
-ss_match=0x00000001
-random_stream_ok=0x00000001
-kat_pass=0x00000001
-```
-
-## Fluxo manual de execução
-
-Para executar manualmente:
+Para não regenerar os vetores e usar o `kat_vectors.h` já existente:
 
 ```bash
+python3 scripts/run_mlkem512_kat.py --skip-reference
+```
+
+Para não recompilar e rodar apenas o `VMurax` existente:
+
+```bash
+python3 scripts/run_mlkem512_kat.py --skip-reference --skip-build
+```
+
+## Execução manual
+
+Fluxo manual completo:
+
+```bash
+python3 scripts/generate_mlkem512_kat_vectors.py
 make -B -C src/main/c/murax/crystal_kyber KAT=yes all
 sbt "runMain vexriscv.demo.MuraxCrystalKyberWithRamInit"
 make -B -C src/test/cpp/murax compile
@@ -348,96 +139,59 @@ cd src/test/cpp/murax
 ./obj_dir/VMurax
 ```
 
-Saída esperada:
+A simulação fica rodando após imprimir `done`, porque o firmware entra em loop infinito no final. Para automação, use `scripts/run_mlkem512_kat.py`, que encerra o processo quando recebe `done`.
+
+## Saída esperada
 
 ```text
 BOOT
-Murax ML-KEM-512 NIST KAT start
-seed_ret=0x00000000
+Murax ML-KEM-512 KAT start
 keypair_ret=0x00000000
 enc_ret=0x00000000
 dec_ret=0x00000000
-seed_match=0x00000001
 pk_match=0x00000001
 sk_match=0x00000001
 ct_match=0x00000001
 ss_match=0x00000001
-random_stream_ok=0x00000001
 kat_pass=0x00000001
 done
 ```
 
-## Automação com Python
+## Significado dos campos
 
-Foi criado o script:
+`keypair_ret=0x00000000` significa que `mlkem_keypair_derand` retornou sucesso.
+
+`enc_ret=0x00000000` significa que `mlkem_enc_derand` retornou sucesso.
+
+`dec_ret=0x00000000` significa que `mlkem_dec` retornou sucesso.
+
+`pk_match=0x00000001` significa que a chave pública gerada no Murax é idêntica ao vetor de referência.
+
+`sk_match=0x00000001` significa que a chave secreta gerada no Murax é idêntica ao vetor de referência.
+
+`ct_match=0x00000001` significa que o ciphertext gerado no Murax é idêntico ao vetor de referência.
+
+`ss_match=0x00000001` significa que o shared secret do encapsulamento e o shared secret recuperado na decapsulação batem com o vetor de referência.
+
+`kat_pass=0x00000001` é o resultado global. Ele só vale `1` quando todos os retornos são zero e todas as comparações byte-a-byte passam.
+
+## Dependências atuais
+
+O KAT atual depende de:
 
 ```text
+external/mlkem-native/
+scripts/generate_mlkem512_kat_vectors.py
 scripts/run_mlkem512_kat.py
+src/main/c/murax/crystal_kyber/src/main_kat.c
+src/main/c/murax/crystal_kyber/src/kat_vectors.h
+src/main/c/murax/crystal_kyber/src/mlkem_native_murax_config.h
 ```
 
-Uso completo:
-
-```bash
-python3 scripts/run_mlkem512_kat.py
-```
-
-O script executa automaticamente:
-
-- compilação/verificação do NIST KAT do PQClean no PC;
-- validação do hash SHA-256 do KAT;
-- compilação do firmware Murax com `KAT=yes`;
-- regeneração do `Murax.v`;
-- recompilação do Verilator;
-- execução do simulador até a linha `done`;
-- validação automática dos campos impressos pelo firmware.
-
-O log é salvo em:
+O KAT atual não depende de:
 
 ```text
-understanding/benchmarks/mlkem512_kat.log
-```
-
-Para apenas validar uma simulação já compilada:
-
-```bash
-python3 scripts/run_mlkem512_kat.py --skip-build --skip-reference
-```
-
-Resultado observado no script:
-
-```text
-nistkat_sha256=c70041a761e01cd6426fa60e9fd6a4412c2be817386c8d0f3334898082512782
-kat_pass=0x00000001
-KAT validation passed: kat_pass=0x00000001
-```
-
-## Interpretação final
-
-O resultado:
-
-```text
-kat_pass=0x00000001
-```
-
-significa que o Murax/VexRiscv executou o ML-KEM-512 e reproduziu byte-a-byte os valores oficiais do vetor NIST KAT `count = 0` do PQClean.
-
-As comparações mais importantes são:
-
-- `pk_match=1`: a chave pública gerada no Murax bate com a referência.
-- `sk_match=1`: a chave secreta gerada no Murax bate com a referência.
-- `ct_match=1`: o ciphertext gerado no Murax bate com a referência.
-- `ss_match=1`: o segredo compartilhado gerado e recuperado no Murax bate com a referência.
-- `random_stream_ok=1`: o firmware não consumiu bytes aleatórios além do previsto.
-
-Essa validação é independente do `randombytes.c` usado no benchmark normal. Portanto, o fluxo recomendado é:
-
-```text
-KAT: validar corretude byte-a-byte contra referência oficial.
-Benchmark: medir ciclos usando o firmware normal.
-```
-
-Para voltar ao benchmark normal, compile sem `KAT=yes`:
-
-```bash
-make -B -C src/main/c/murax/crystal_kyber BENCH_ROUNDS=2 all
+PQClean
+kyber_implementation
+kat_randombytes.c
 ```

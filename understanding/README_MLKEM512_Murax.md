@@ -4,12 +4,24 @@ Este README descreve o que está implementado atualmente para executar o ML-KEM-
 
 ## O que está implementado
 
-O projeto possui uma aplicação bare-metal para o Murax que executa a implementação `clean` do ML-KEM-512 vinda do PQClean.
+O projeto possui uma aplicação bare-metal para o Murax que executa o ML-KEM-512 usando `mlkem-native` como implementação principal. O código fica versionado como submodule Git.
 
 Diretório principal do algoritmo:
 
 ```text
-kyber_implementation/
+external/mlkem-native/
+```
+
+Unidade C compilada no firmware:
+
+```text
+external/mlkem-native/mlkem/mlkem_native.c
+```
+
+Header público usado pelo firmware:
+
+```text
+external/mlkem-native/mlkem/mlkem_native.h
 ```
 
 Firmware bare-metal do Murax:
@@ -23,8 +35,9 @@ Arquivos principais do firmware:
 ```text
 src/main/c/murax/crystal_kyber/src/main.c
 src/main/c/murax/crystal_kyber/src/main_kat.c
-src/main/c/murax/crystal_kyber/src/kat_randombytes.c
 src/main/c/murax/crystal_kyber/src/kat_vectors.h
+src/main/c/murax/crystal_kyber/src/randombytes.c
+src/main/c/murax/crystal_kyber/src/mlkem_native_murax_config.h
 src/main/c/murax/crystal_kyber/src/support.c
 src/main/c/murax/crystal_kyber/src/linker.ld
 ```
@@ -32,7 +45,57 @@ src/main/c/murax/crystal_kyber/src/linker.ld
 Existem dois modos principais:
 
 - Benchmark normal: executa `keypair`, `encapsulation` e `decapsulation`, imprime prefixos dos buffers e ciclos medidos por `rdcycle`.
-- KAT: executa o vetor conhecido do PQClean/NIST e valida byte-a-byte `seed`, `pk`, `sk`, `ct` e `ss`.
+- KAT: executa o primeiro vetor conhecido gerado pelo submodule `mlkem-native` e valida byte-a-byte `pk`, `sk`, `ct` e `ss`.
+
+## Submodule `mlkem-native`
+
+O submodule foi adicionado em:
+
+```text
+external/mlkem-native
+```
+
+A configuração do submodule fica em `.gitmodules`:
+
+```text
+[submodule "external/mlkem-native"]
+	path = external/mlkem-native
+	url = https://github.com/pq-code-package/mlkem-native
+```
+
+Ao clonar o repositório em outra máquina, inicialize os submodules com:
+
+```bash
+git submodule update --init --recursive
+```
+
+Se o repositório já foi clonado e o diretório `external/mlkem-native` estiver vazio, esse comando baixa o conteúdo correto.
+
+O firmware usa o build monolítico C do `mlkem-native`, sem backend assembly nativo. A configuração local está em:
+
+```text
+src/main/c/murax/crystal_kyber/src/mlkem_native_murax_config.h
+```
+
+Configuração usada:
+
+```c
+#define MLK_CONFIG_PARAMETER_SET 512
+#define MLK_CONFIG_NAMESPACE_PREFIX mlkem
+#define MLK_CONFIG_INTERNAL_API_QUALIFIER static
+#define MLK_CONFIG_NO_ASM
+#define MLK_CONFIG_CUSTOM_ZEROIZE
+```
+
+Funções chamadas pelo firmware:
+
+```c
+mlkem_keypair(pk, sk);
+mlkem_enc(ct, ss1, pk);
+mlkem_dec(ss2, ct, sk);
+```
+
+O diretório antigo `kyber_implementation/` foi removido do fluxo atual. O firmware não depende mais do PQClean local; a implementação usada é o submodule `external/mlkem-native`.
 
 ## Arquitetura alvo
 
@@ -66,26 +129,34 @@ src/main/c/murax/crystal_kyber/build/crystal_kyber.hex
 O Makefile está configurado por padrão para:
 
 ```text
-RISCV_PATH ?= /opt/riscv-ricstar
-RISCV_NAME ?= riscv32-none-elf
+RISCV_PATH ?= /home/borgescaua/opt/riscv-elf-multilib
+RISCV_NAME ?= riscv64-unknown-elf
 ```
 
 O compilador esperado é:
 
 ```text
-/opt/riscv-ricstar/bin/riscv32-none-elf-gcc
+/home/borgescaua/opt/riscv-elf-multilib/bin/riscv64-unknown-elf-gcc
 ```
+
+Mesmo o prefixo sendo `riscv64-unknown-elf`, a toolchain precisa ser multilib e suportar geração de código RV32/ILP32, porque o Murax usado neste projeto é RV32. Verifique com:
+
+```bash
+riscv64-unknown-elf-gcc -print-multi-lib
+```
+
+Deve existir uma entrada compatível com `rv32i/ilp32` ou equivalente.
 
 Para conferir:
 
 ```bash
-which riscv32-none-elf-gcc
+which riscv64-unknown-elf-gcc
 ```
 
 No ambiente atual, o caminho esperado é:
 
 ```text
-/opt/riscv-ricstar/bin/riscv32-none-elf-gcc
+/home/borgescaua/opt/riscv-elf-multilib/bin/riscv64-unknown-elf-gcc
 ```
 
 ## Saídas geradas pelo firmware
@@ -128,8 +199,8 @@ MULDIV=no
 COMPRESSED=no
 KAT ?= no
 BENCH_ROUNDS ?= 2
-RISCV_NAME ?= riscv32-none-elf
-RISCV_PATH ?= /opt/riscv-ricstar
+RISCV_NAME ?= riscv64-unknown-elf
+RISCV_PATH ?= /home/borgescaua/opt/riscv-elf-multilib
 MABI=ilp32
 MARCH := rv32i_zicsr
 ```
@@ -206,7 +277,7 @@ Passa uma variável para o Makefile:
 make -B -C src/main/c/murax/crystal_kyber KAT=yes all
 ```
 
-Com `KAT=yes`, o Makefile compila `main_kat.c` e `kat_randombytes.c`, removendo o `main.c` normal e o `randombytes.c` normal.
+Com `KAT=yes`, o Makefile compila `main_kat.c` no lugar do `main.c` normal. O `randombytes.c` continua linkado porque `mlkem_native.c` referencia esse símbolo internamente, mas o KAT injeta diretamente `kat_keypair_coins` e `kat_enc_coins` nas APIs determinísticas do `mlkem-native`.
 
 ### `BENCH_ROUNDS=30`
 
@@ -622,8 +693,9 @@ python3 scripts/run_mlkem512_kat.py
 
 Esse script faz tudo:
 
-- compila o gerador KAT do PQClean no PC;
-- verifica o SHA-256 do KAT oficial;
+- compila o gerador KAT do submodule `mlkem-native` no PC;
+- verifica o SHA-256 da saída completa do `gen_KAT512`;
+- recria `src/main/c/murax/crystal_kyber/src/kat_vectors.h`;
 - compila o firmware com `KAT=yes`;
 - regenera o `Murax.v`;
 - recompila o Verilator;
@@ -648,40 +720,23 @@ Exemplo:
 
 ```text
 BOOT
-Murax ML-KEM-512 NIST KAT start
-seed_ret=0x00000000
+Murax ML-KEM-512 KAT start
 keypair_ret=0x00000000
 enc_ret=0x00000000
 dec_ret=0x00000000
-seed_match=0x00000001
 pk_match=0x00000001
 sk_match=0x00000001
 ct_match=0x00000001
 ss_match=0x00000001
-random_stream_ok=0x00000001
 kat_pass=0x00000001
 done
 ```
 
 ## Significado de cada métrica do KAT
 
-### `Murax ML-KEM-512 NIST KAT start`
+### `Murax ML-KEM-512 KAT start`
 
 Confirma que o firmware KAT está rodando, não o firmware normal de benchmark.
-
-### `seed_ret`
-
-Retorno da chamada:
-
-```c
-randombytes(seed, 48)
-```
-
-Valor esperado:
-
-```text
-seed_ret=0x00000000
-```
 
 ### `keypair_ret`, `enc_ret`, `dec_ret`
 
@@ -691,16 +746,6 @@ Todos devem ser:
 
 ```text
 0x00000000
-```
-
-### `seed_match`
-
-Compara a `seed` usada no Murax com a `seed` oficial do vetor KAT.
-
-Valor esperado:
-
-```text
-seed_match=0x00000001
 ```
 
 ### `pk_match`
@@ -746,18 +791,6 @@ Valor esperado:
 ss_match=0x00000001
 ```
 
-### `random_stream_ok`
-
-Indica se o firmware consumiu exatamente a quantidade esperada de bytes pseudoaleatórios do vetor KAT.
-
-Valor esperado:
-
-```text
-random_stream_ok=0x00000001
-```
-
-Se for `0`, significa que o algoritmo pediu mais bytes do que o replay KAT fornece, ou seja, o fluxo de chamadas não corresponde ao esperado.
-
 ### `kat_pass`
 
 Resultado final do KAT.
@@ -770,7 +803,7 @@ kat_pass=0x00000001
 
 Interpretação:
 
-- `1`: todos os retornos foram zero, todos os vetores bateram e o fluxo de randombytes foi correto.
+- `1`: todos os retornos foram zero e todos os vetores bateram.
 - `0`: alguma comparação falhou.
 
 ## Diferença entre benchmark e KAT
@@ -778,7 +811,8 @@ Interpretação:
 Benchmark normal:
 
 - Usa `main.c`.
-- Usa `kyber_implementation/randombytes.c`.
+- Usa `src/randombytes.c` como fonte determinística de bytes para benchmark.
+- Usa `external/mlkem-native/mlkem/mlkem_native.c` como implementação ML-KEM.
 - Mede ciclos com `rdcycle`.
 - Imprime `cycles_keypair`, `cycles_enc` e `cycles_dec`.
 - Serve para desempenho.
@@ -786,9 +820,10 @@ Benchmark normal:
 KAT:
 
 - Usa `main_kat.c`.
-- Usa `kat_randombytes.c`.
-- Usa vetores fixos oficiais do PQClean.
-- Compara byte-a-byte `seed`, `pk`, `sk`, `ct` e `ss`.
+- Usa `main_kat.c` com `mlkem_keypair_derand` e `mlkem_enc_derand`.
+- Usa `external/mlkem-native/mlkem/mlkem_native.c` como implementação ML-KEM.
+- Usa vetores fixos gerados por `external/mlkem-native/test/src/gen_KAT.c`.
+- Compara byte-a-byte `pk`, `sk`, `ct` e `ss`.
 - Serve para corretude.
 
 ## Limpeza do build
@@ -868,14 +903,12 @@ done
 KAT funcionando:
 
 ```text
-seed_match=0x00000001
 pk_match=0x00000001
 sk_match=0x00000001
 ct_match=0x00000001
 ss_match=0x00000001
-random_stream_ok=0x00000001
 kat_pass=0x00000001
 done
 ```
 
-Se `ss_match=1` no benchmark, o fluxo KEM funcionou naquela execução. Se `kat_pass=1` no KAT, a implementação no Murax bateu byte-a-byte com o vetor oficial do PQClean.
+Se `ss_match=1` no benchmark, o fluxo KEM funcionou naquela execução. Se `kat_pass=1` no KAT, a implementação no Murax bateu byte-a-byte com o vetor gerado pelo `mlkem-native`.

@@ -1,17 +1,17 @@
 #include <stdint.h>
 
-#include "api.h"
+#include "mlkem_native.h"
 #include "murax.h"
 
 #ifndef BENCH_ROUNDS
 #define BENCH_ROUNDS 2u
 #endif
 
-static uint8_t pk[PQCLEAN_MLKEM512_CLEAN_CRYPTO_PUBLICKEYBYTES];
-static uint8_t sk[PQCLEAN_MLKEM512_CLEAN_CRYPTO_SECRETKEYBYTES];
-static uint8_t ct[PQCLEAN_MLKEM512_CLEAN_CRYPTO_CIPHERTEXTBYTES];
-static uint8_t ss1[PQCLEAN_MLKEM512_CLEAN_CRYPTO_BYTES];
-static uint8_t ss2[PQCLEAN_MLKEM512_CLEAN_CRYPTO_BYTES];
+static uint8_t pk[MLKEM512_PUBLICKEYBYTES];
+static uint8_t sk[MLKEM512_SECRETKEYBYTES];
+static uint8_t ct[MLKEM512_CIPHERTEXTBYTES];
+static uint8_t ss1[MLKEM512_BYTES];
+static uint8_t ss2[MLKEM512_BYTES];
 
 static void print(const char *str) {
   while (*str) {
@@ -58,7 +58,7 @@ static inline uint32_t read_cycle(void) {
 }
 
 static int shared_secret_matches(void) {
-  for (uint32_t i = 0; i < PQCLEAN_MLKEM512_CLEAN_CRYPTO_BYTES; i++) {
+  for (uint32_t i = 0; i < MLKEM512_BYTES; i++) {
     if (ss1[i] != ss2[i]) {
       return 0;
     }
@@ -87,15 +87,15 @@ static void run_round(uint32_t round) {
   uart_write(UART, '\n');
 
   uint32_t start_keypair = read_cycle();
-  int keypair_ret = PQCLEAN_MLKEM512_CLEAN_crypto_kem_keypair(pk, sk);
+  int keypair_ret = mlkem_keypair(pk, sk);
   uint32_t end_keypair = read_cycle();
 
   uint32_t start_enc = read_cycle();
-  int enc_ret = PQCLEAN_MLKEM512_CLEAN_crypto_kem_enc(ct, ss1, pk);
+  int enc_ret = mlkem_enc(ct, ss1, pk);
   uint32_t end_enc = read_cycle();
 
   uint32_t start_dec = read_cycle();
-  int dec_ret = PQCLEAN_MLKEM512_CLEAN_crypto_kem_dec(ss2, ct, sk);
+  int dec_ret = mlkem_dec(ss2, ct, sk);
   uint32_t end_dec = read_cycle();
 
   print_result("keypair_ret", keypair_ret);

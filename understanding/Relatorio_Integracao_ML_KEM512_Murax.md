@@ -1,3 +1,5 @@
+> Nota: este relatorio descreve a integracao antiga baseada em PQClean. O fluxo atual foi migrado para o submodule `external/mlkem-native`; veja `understanding/README_MLKEM512_Murax.md` e `understanding/MLKEM512_KAT_Murax.md`.
+
 # Relatorio de Integracao do ML-KEM-512 ao SoC Murax/VexRiscv em Ambiente Bare-Metal
 
 ## 1. Objetivo
