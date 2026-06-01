@@ -56,9 +56,15 @@ ifeq ($(BENCH),yes)
 	CFLAGS += -fno-inline
 endif
 
-RISCV_OBJCOPY = $(RISCV_PATH)/bin/$(RISCV_NAME)-objcopy
-RISCV_OBJDUMP = $(RISCV_PATH)/bin/$(RISCV_NAME)-objdump
-RISCV_CC=$(RISCV_PATH)/bin/$(RISCV_NAME)-gcc
+ifneq ($(strip $(RISCV_PATH)),)
+RISCV_PREFIX := $(RISCV_PATH)/bin/$(RISCV_NAME)
+else
+RISCV_PREFIX := $(RISCV_NAME)
+endif
+
+RISCV_OBJCOPY = $(RISCV_PREFIX)-objcopy
+RISCV_OBJDUMP = $(RISCV_PREFIX)-objdump
+RISCV_CC = $(RISCV_PREFIX)-gcc
 
 CFLAGS += -MD -fstrict-volatile-bitfields -fno-strict-aliasing -ffreestanding
 LDFLAGS += -nostdlib -lgcc -mcmodel=medany -nostartfiles -ffreestanding -Wl,-Bstatic,-T,$(LDSCRIPT),-Map,$(OBJDIR)/$(PROJ_NAME).map,--print-memory-usage
@@ -70,7 +76,25 @@ MLKEM_NATIVE_C_OBJS := $(patsubst $(MLKEM_NATIVE_DIR)/%.c,$(OBJDIR)/mlkem-native
 
 OBJS := $(APP_C_OBJS) $(APP_CPP_OBJS) $(APP_ASM_OBJS) $(MLKEM_NATIVE_C_OBJS)
 
-all: $(OBJDIR)/$(PROJ_NAME).elf $(OBJDIR)/$(PROJ_NAME).hex $(OBJDIR)/$(PROJ_NAME).bin $(OBJDIR)/$(PROJ_NAME).asm $(OBJDIR)/$(PROJ_NAME).v
+all: toolchain-check $(OBJDIR)/$(PROJ_NAME).elf $(OBJDIR)/$(PROJ_NAME).hex $(OBJDIR)/$(PROJ_NAME).bin $(OBJDIR)/$(PROJ_NAME).asm $(OBJDIR)/$(PROJ_NAME).v
+
+.PHONY: toolchain-check
+toolchain-check:
+	@command -v $(RISCV_CC) >/dev/null 2>&1 || { \
+		echo "ERROR: RISC-V compiler not found: $(RISCV_CC)"; \
+		echo "Set RISCV_PATH=/path/to/riscv-toolchain or put $(RISCV_NAME)-gcc in PATH."; \
+		exit 1; \
+	}
+	@mkdir -p $(OBJDIR)
+	@printf '#include <string.h>\n#include <stdint.h>\nint x;\n' | \
+		$(RISCV_CC) $(CFLAGS) $(INC) -x c -c -o $(OBJDIR)/.toolchain_check.o - >/dev/null 2>&1 || { \
+		echo "ERROR: $(RISCV_CC) cannot compile with standard bare-metal C headers."; \
+		echo "Missing headers such as string.h usually mean the toolchain was installed without newlib/newlib-nano."; \
+		echo "Use a complete RISC-V bare-metal multilib toolchain with support for $(MARCH)/$(MABI)."; \
+		echo "Check with: $(RISCV_CC) -print-multi-lib"; \
+		exit 1; \
+	}
+	@rm -f $(OBJDIR)/.toolchain_check.o $(OBJDIR)/.toolchain_check.d
 
 $(OBJDIR)/%.elf: $(OBJS) | $(OBJDIR)
 	$(RISCV_CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) $(LIBSINC) $(LIBS)
