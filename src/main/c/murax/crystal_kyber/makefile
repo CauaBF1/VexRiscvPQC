@@ -29,7 +29,7 @@ LIBSINC = -L$(OBJDIR)
 LDSCRIPT = ./src/linker.ld
 
 RISCV_NAME ?= riscv64-unknown-elf
-RISCV_PATH ?= /home/borgescaua/opt/riscv-elf-multilib
+RISCV_PATH ?= /opt/riscv-gnu-toolchain
 
 MABI=ilp32
 MARCH := rv32i_zicsr
@@ -82,7 +82,7 @@ all: toolchain-check $(OBJDIR)/$(PROJ_NAME).elf $(OBJDIR)/$(PROJ_NAME).hex $(OBJ
 toolchain-check:
 	@command -v $(RISCV_CC) >/dev/null 2>&1 || { \
 		echo "ERROR: RISC-V compiler not found: $(RISCV_CC)"; \
-		echo "Set RISCV_PATH=/path/to/riscv-toolchain or put $(RISCV_NAME)-gcc in PATH."; \
+		echo "Set RISCV_PATH=/path/to/riscv-toolchain."; \
 		exit 1; \
 	}
 	@mkdir -p $(OBJDIR)
@@ -91,7 +91,7 @@ toolchain-check:
 		echo "ERROR: $(RISCV_CC) cannot compile with standard bare-metal C headers."; \
 		echo "Missing headers such as string.h usually mean the toolchain was installed without newlib/newlib-nano."; \
 		echo "Use a complete RISC-V bare-metal multilib toolchain with support for $(MARCH)/$(MABI)."; \
-		echo "Check with: $(RISCV_CC) -print-multi-lib"; \
+		echo "Check with: $(RISCV_CC) --print-multi-lib"; \
 		exit 1; \
 	}
 	@rm -f $(OBJDIR)/.toolchain_check.o $(OBJDIR)/.toolchain_check.d

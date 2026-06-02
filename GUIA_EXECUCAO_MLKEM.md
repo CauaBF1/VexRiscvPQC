@@ -11,19 +11,19 @@ Instale ou tenha disponível:
 - Java compatível com SBT, por exemplo OpenJDK 17
 - `verilator`
 - `g++`
-- toolchain bare-metal RISC-V com suporte a `rv32i/ilp32`
+- toolchain bare-metal RISC-V com suporte a `rv32i/ilp32` (Usar `./configure --prefix=/opt/riscv-gnu-toolchain --enable-multilib --enable-qemu-system`)
 
 A toolchain usada atualmente no Makefile é:
 
 ```text
-/opt/riscv-elf-multilib/bin/riscv64-unknown-elf-gcc
+/opt/riscv-gnu-toolchain/bin/riscv64-unknown-elf-gcc
 ```
 
 O Makefile usa por padrão:
 
 ```make
 RISCV_NAME ?= riscv64-unknown-elf
-RISCV_PATH ?= /home/borgescaua/opt/riscv-elf-multilib
+RISCV_PATH ?= /opt/riscv-gnu-toolchain
 MARCH := rv32i_zicsr
 MABI := ilp32
 ```
@@ -31,7 +31,7 @@ MABI := ilp32
 Para conferir se a toolchain tem o multilib necessário:
 
 ```bash
-riscv64-unknown-elf-gcc -print-multi-lib
+riscv64-unknown-elf-gcc --print-multi-lib
 ```
 
 Deve existir uma entrada compatível com `rv32i/ilp32`.
