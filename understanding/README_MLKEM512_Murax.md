@@ -129,20 +129,20 @@ src/main/c/murax/crystal_kyber/build/crystal_kyber.hex
 O Makefile está configurado por padrão para:
 
 ```text
-RISCV_PATH ?= /home/borgescaua/opt/riscv-elf-multilib
+RISCV_PATH ?= /opt/riscv-gnu-toolchain
 RISCV_NAME ?= riscv64-unknown-elf
 ```
 
 O compilador esperado é:
 
 ```text
-/home/borgescaua/opt/riscv-elf-multilib/bin/riscv64-unknown-elf-gcc
+/opt/riscv-gnu-toolchain/bin/riscv64-unknown-elf-gcc
 ```
 
 Mesmo o prefixo sendo `riscv64-unknown-elf`, a toolchain precisa ser multilib e suportar geração de código RV32/ILP32, porque o Murax usado neste projeto é RV32. Verifique com:
 
 ```bash
-riscv64-unknown-elf-gcc -print-multi-lib
+riscv64-unknown-elf-gcc --print-multi-lib
 ```
 
 Deve existir uma entrada compatível com `rv32i/ilp32` ou equivalente.
@@ -156,7 +156,7 @@ which riscv64-unknown-elf-gcc
 No ambiente atual, o caminho esperado é:
 
 ```text
-/home/borgescaua/opt/riscv-elf-multilib/bin/riscv64-unknown-elf-gcc
+/opt/riscv-gnu-toolchain/bin/riscv64-unknown-elf-gcc
 ```
 
 ## Saídas geradas pelo firmware
@@ -200,7 +200,7 @@ COMPRESSED=no
 KAT ?= no
 BENCH_ROUNDS ?= 2
 RISCV_NAME ?= riscv64-unknown-elf
-RISCV_PATH ?= /home/borgescaua/opt/riscv-elf-multilib
+RISCV_PATH ?= /opt/riscv-gnu-toolchain
 MABI=ilp32
 MARCH := rv32i_zicsr
 ```
