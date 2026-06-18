@@ -5,6 +5,7 @@ MULDIV=no
 COMPRESSED=no
 KAT ?= no
 BENCH_ROUNDS ?= 2
+FPGA_LED_ONLY ?= no
 
 ROOT := ../../../../..
 MLKEM_NATIVE_DIR := $(ROOT)/external/mlkem-native/mlkem
@@ -42,6 +43,9 @@ endif
 
 CFLAGS += -march=$(MARCH) -mabi=$(MABI) -DNDEBUG -DBENCH_ROUNDS=$(BENCH_ROUNDS)
 CFLAGS += -DMLK_CONFIG_FILE=\"mlkem_native_murax_config.h\"
+ifeq ($(FPGA_LED_ONLY),yes)
+	CFLAGS += -DFPGA_LED_ONLY=1
+endif
 LDFLAGS += -march=$(MARCH) -mabi=$(MABI)
 
 ifeq ($(DEBUG),yes)

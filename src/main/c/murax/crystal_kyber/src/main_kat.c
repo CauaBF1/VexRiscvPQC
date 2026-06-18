@@ -13,22 +13,32 @@ static uint8_t ss1[MLKEM512_BYTES];
 static uint8_t ss2[MLKEM512_BYTES];
 
 static void print(const char *str) {
+#ifdef FPGA_LED_ONLY
+  (void)str;
+#else
   while (*str) {
     uart_write(UART, *str);
     str++;
   }
+#endif
 }
 
 static void println(const char *str) {
   print(str);
+#ifndef FPGA_LED_ONLY
   uart_write(UART, '\n');
+#endif
 }
 
 static void print_hex32(uint32_t value) {
+#ifdef FPGA_LED_ONLY
+  (void)value;
+#else
   for (int i = 7; i >= 0; i--) {
     uint32_t digit = (value >> (i * 4)) & 0xF;
     uart_write(UART, digit < 10 ? ('0' + digit) : ('A' + digit - 10));
   }
+#endif
 }
 
 static int bytes_equal(const uint8_t *lhs, const uint8_t *rhs, size_t n) {
@@ -45,14 +55,19 @@ static void print_result(const char *label, int value) {
   print(label);
   print("=0x");
   print_hex32((uint32_t)value);
+#ifndef FPGA_LED_ONLY
   uart_write(UART, '\n');
+#endif
 }
 
 static int run_kat(void) {
   int pass = 1;
 
+  GPIO_A->OUTPUT = 0x00000002;
   int keypair_ret = mlkem_keypair_derand(pk, sk, kat_keypair_coins);
+  GPIO_A->OUTPUT = 0x00000004;
   int enc_ret = mlkem_enc_derand(ct, ss1, pk, kat_enc_coins);
+  GPIO_A->OUTPUT = 0x00000008;
   int dec_ret = mlkem_dec(ss2, ct, sk);
 
   int pk_match = bytes_equal(pk, kat_pk, sizeof(pk));
@@ -77,6 +92,7 @@ static int run_kat(void) {
   print_result("ss_match", ss_match);
   print_result("kat_pass", pass);
 
+  GPIO_A->OUTPUT = pass ? 0x0000000F : 0x00000008;
   return pass;
 }
 
@@ -88,12 +104,18 @@ void main(void) {
   (void)run_kat();
   println("done");
 
+#ifdef FPGA_LED_ONLY
+  while (1) {
+    asm volatile("" ::: "memory");
+  }
+#else
   while (1) {
     GPIO_A->OUTPUT ^= 0x0000000F;
     for (volatile uint32_t i = 0; i < 200000; i++) {
       asm volatile("" ::: "memory");
     }
   }
+#endif
 }
 
 void irqCallback(void) {

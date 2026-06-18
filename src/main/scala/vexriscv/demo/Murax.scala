@@ -45,6 +45,7 @@ case class MuraxConfig(coreFrequency : HertzNumber,
                        uartCtrlConfig     : UartCtrlMemoryMappedConfig,
                        xipConfig          : SpiXdrMasterCtrl.MemoryMappingParameters,
                        hardwareBreakpointCount : Int,
+                       withJtag            : Boolean,
                        withNativeJtag      : Boolean,
                        cpuPlugins         : ArrayBuffer[Plugin[VexRiscv]]
                        ){
@@ -72,6 +73,7 @@ object MuraxConfig{
       xip = SpiXdrMasterCtrl.XipBusParameters(addressWidth = 24, lengthWidth = 2)
     )),
     hardwareBreakpointCount = if(withXip) 3 else 0,
+    withJtag = true,
     withNativeJtag = false,
     cpuPlugins = ArrayBuffer( //DebugPlugin added by the toplevel
       new IBusSimplePlugin(
@@ -166,7 +168,7 @@ case class Murax(config : MuraxConfig) extends Component{
     val mainClk = in Bool()
 
     //Main components IO
-    val jtag = ifGen(!config.withNativeJtag) (slave(Jtag()))
+    val jtag = ifGen(config.withJtag && !config.withNativeJtag) (slave(Jtag()))
 
     //Peripherals IO
     val gpioA = master(TriStateArray(gpioWidth bits))
@@ -175,7 +177,7 @@ case class Murax(config : MuraxConfig) extends Component{
     val xip = ifGen(genXip)(master(SpiXdrMaster(xipConfig.ctrl.spi)))
   }
 
-  val jtagNative = withNativeJtag generate new ClockingArea(debugClockDomain){
+  val jtagNative = (withJtag && withNativeJtag) generate new ClockingArea(debugClockDomain){
     val jtagCtrl = JtagTapInstructionCtrl()
     val tap = jtagCtrl.fromXilinxBscane2(userId = 2)
   }
@@ -231,11 +233,12 @@ case class Murax(config : MuraxConfig) extends Component{
     //Priority to dBus, !! cmd transactions can change on the fly !!
     val mainBusArbiter = new MuraxMasterArbiter(pipelinedMemoryBusConfig, bigEndianDBus)
 
-    //Instanciate the CPU
+    // Instantiate the optional debug plugin only on targets that expose a JTAG transport.
+    if(withJtag) {
+      cpuPlugins += new DebugPlugin(debugClockDomain, hardwareBreakpointCount)
+    }
     val cpu = new VexRiscv(
-      config = VexRiscvConfig(
-        plugins = cpuPlugins += new DebugPlugin(debugClockDomain, hardwareBreakpointCount)
-      )
+      config = VexRiscvConfig(plugins = cpuPlugins)
     )
 
     //Checkout plugins used to instanciate the CPU to connect them to the SoC
@@ -541,6 +544,25 @@ object MuraxWithRamInit{
 object MuraxCrystalKyberWithRamInit{
   def main(args: Array[String]) {
     val config = MuraxConfig.default.copy(
+      onChipRamSize = 128 kB,
+      onChipRamHexFile = "src/main/c/murax/crystal_kyber/build/crystal_kyber.hex"
+    )
+
+    config.cpuPlugins(config.cpuPlugins.indexWhere(_.isInstanceOf[CsrPlugin])) =
+      new CsrPlugin(CsrPluginConfig.smallest(mtvecInit = 0x80000020l).copy(
+        mcycleAccess = CsrAccess.READ_WRITE,
+        ucycleAccess = CsrAccess.READ_ONLY
+      ))
+
+    SpinalVerilog(Murax(config))
+  }
+}
+
+object MuraxCrystalKyberDe10Standard{
+  def main(args: Array[String]) {
+    val config = MuraxConfig.default.copy(
+      coreFrequency = 50 MHz,
+      withJtag = false,
       onChipRamSize = 128 kB,
       onChipRamHexFile = "src/main/c/murax/crystal_kyber/build/crystal_kyber.hex"
     )
