@@ -148,6 +148,166 @@ KAT validation passed: kat_pass=0x00000001
 
 `kat_pass=0x00000001` significa que todos os retornos foram sucesso e `pk`, `sk`, `ct` e `ss` bateram byte-a-byte com o vetor de referência.
 
+## Rodar em FPGA
+
+O fluxo FPGA implementado neste repositório é para a **DE10-Standard** usando o Murax/VexRiscv e saída por **LEDs**. Ele não usa UART para imprimir texto na placa.
+
+Na FPGA, o firmware é compilado com:
+
+```make
+FPGA_LED_ONLY=yes
+```
+
+Com essa flag, as chamadas de impressão são desativadas no firmware. A validação do resultado é feita pelos LEDs `LEDR[3:0]`, conectados ao `GPIO_A[3:0]` do Murax.
+
+Para obter saída textual com `pk_prefix`, `ct_prefix`, `ss_match` e ciclos, use a simulação Verilator descrita na seção "Executar o benchmark normal". A execução FPGA atual serve para confirmar visualmente que o firmware roda até o fim e que o ML-KEM terminou com sucesso.
+
+### DE10-Standard com LEDs
+
+O alvo da DE10-Standard está em:
+
+```text
+scripts/Murax/de10_standard/
+```
+
+Ele gera:
+
+```text
+scripts/Murax/de10_standard/output_files/MuraxDe10Standard.sof
+```
+
+O wrapper da placa conecta:
+
+```text
+CLOCK_50  -> clock principal do Murax
+KEY0      -> reset assíncrono, ativo em nível baixo
+LEDR[3:0] -> GPIO_A[3:0]
+LEDR[9:4] -> 0
+```
+
+O UART do Murax não é exportado nesse alvo. O sinal `uart_rxd` fica preso em nível idle e `uart_txd` não é ligado a pino externo.
+
+Antes de compilar, confira que o submodule do `mlkem-native` existe:
+
+```bash
+git submodule update --init --recursive
+```
+
+Compile o firmware, gere o RTL e rode a síntese/implementação no Quartus:
+
+```bash
+make -C scripts/Murax/de10_standard build \
+  RISCV_PATH=/home/borgescaua/opt/riscv-elf-multilib \
+  RISCV_NAME=riscv64-unknown-elf \
+  BENCH_ROUNDS=1
+```
+
+Se a toolchain estiver em outro caminho, ajuste apenas `RISCV_PATH`. Por exemplo:
+
+```bash
+make -C scripts/Murax/de10_standard build \
+  RISCV_PATH=/usr \
+  RISCV_NAME=riscv64-unknown-elf \
+  BENCH_ROUNDS=1
+```
+
+Se o Quartus não estiver no `PATH`, passe os binários explicitamente:
+
+```bash
+make -C scripts/Murax/de10_standard build \
+  RISCV_PATH=/home/borgescaua/opt/riscv-elf-multilib \
+  RISCV_NAME=riscv64-unknown-elf \
+  QUARTUS_SH=/caminho/para/quartus_sh
+```
+
+Grave a FPGA:
+
+```bash
+make -C scripts/Murax/de10_standard program
+```
+
+Se houver mais de um cabo JTAG, escolha o cabo com `CABLE`:
+
+```bash
+jtagconfig
+make -C scripts/Murax/de10_standard program CABLE=1
+```
+
+Na DE10-Standard, a cadeia JTAG normalmente mostra primeiro o HPS e depois a FPGA. Por isso o Makefile programa o `.sof` no índice `@2` e pula o HPS com:
+
+```make
+HPS_DEVICE ?= SOCVHPS
+FPGA_DEVICE_INDEX ?= 2
+```
+
+### Significado dos LEDs
+
+Durante a execução normal:
+
+```text
+LEDR[0] = 1    firmware iniciou
+LEDR[1] = 1    keypair em execução
+LEDR[2] = 1    encapsulation em execução
+LEDR[3] = 1    decapsulation em execução ou falha final
+LEDR[3:0] = 1111    execução terminou com sucesso
+```
+
+O estado final esperado é:
+
+```text
+LEDR[3:0] = 1111
+```
+
+Isso significa que:
+
+```text
+mlkem_keypair retornou 0
+mlkem_enc retornou 0
+mlkem_dec retornou 0
+ss1 e ss2 são iguais
+```
+
+Se o estado final ficar em:
+
+```text
+LEDR[3:0] = 1000
+```
+
+então houve falha em algum retorno ou o shared secret não bateu.
+
+### Rodar KAT na FPGA
+
+Para gravar o firmware KAT na DE10-Standard em vez do benchmark normal:
+
+```bash
+make -C scripts/Murax/de10_standard kat-program \
+  RISCV_PATH=/home/borgescaua/opt/riscv-elf-multilib \
+  RISCV_NAME=riscv64-unknown-elf
+```
+
+Esse comando:
+
+- gera `kat_vectors.h` a partir do submodule `external/mlkem-native`;
+- compila o firmware com `KAT=yes`;
+- compila com `FPGA_LED_ONLY=yes`;
+- regenera o RTL do Murax para a DE10-Standard;
+- roda o Quartus;
+- grava o `.sof` na FPGA.
+
+Como a saída da FPGA é por LEDs, não há impressão do `kat_pass` na placa. O estado final esperado também é:
+
+```text
+LEDR[3:0] = 1111
+```
+
+No KAT, esse estado indica que `pk`, `sk`, `ct` e `ss` bateram byte-a-byte com os vetores gerados.
+
+### Outros alvos FPGA
+
+O repositório também contém diretórios antigos para Arty A7 e iCE40 HX8K. Eles servem como referência de fluxo FPGA, mas não são o caminho pronto para o ML-KEM-512 atual.
+
+O firmware atual usa 128 KiB de RAM no Murax. Portanto, qualquer outro alvo precisa ser adaptado para usar o firmware `crystal_kyber.hex`, RAM suficiente e o mapeamento de saída desejado.
+
 ## Comandos úteis
 
 Limpar build do firmware:
