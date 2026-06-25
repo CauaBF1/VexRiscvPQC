@@ -54,3 +54,7 @@ simWorkspace/
 tmp/
 /archive.tar.gz
 *.out32
+# liteX
+litex-env/
+litex/build/
+litex/**/build/

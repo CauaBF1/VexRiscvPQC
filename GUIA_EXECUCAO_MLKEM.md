@@ -233,6 +233,49 @@ jtagconfig
 make -C scripts/Murax/de10_standard program CABLE=1
 ```
 
+Se o comando `jtagconfig` mostrar:
+
+```text
+No JTAG hardware available
+```
+
+primeiro confira se o Linux detectou o USB-Blaster:
+
+```bash
+lsusb | grep -i -E 'altera|09fb|blaster'
+```
+
+Se aparecer um dispositivo Altera, por exemplo `09fb:6010`, mas o `jtagconfig` continuar sem listar hardware, o problema pode ser permissão do USB-Blaster. Crie uma regra `udev`:
+
+```bash
+sudo tee /etc/udev/rules.d/51-usbblaster.rules >/dev/null <<'EOF'
+SUBSYSTEM=="usb", ATTR{idVendor}=="09fb", MODE="0666", TAG+="uaccess"
+EOF
+```
+
+Recarregue as regras e reconecte o cabo USB-Blaster:
+
+```bash
+sudo udevadm control --reload-rules
+sudo udevadm trigger
+```
+
+Depois reinicie o daemon JTAG e teste novamente:
+
+```bash
+sudo killall jtagd 2>/dev/null
+jtagd
+jtagconfig
+```
+
+O resultado esperado na DE10-Standard é algo parecido com:
+
+```text
+1) DE-SoC [...]
+  4BA00477   SOCVHPS
+  02D020DD   5CSEBA6...
+```
+
 Na DE10-Standard, a cadeia JTAG normalmente mostra primeiro o HPS e depois a FPGA. Por isso o Makefile programa o `.sof` no índice `@2` e pula o HPS com:
 
 ```make
