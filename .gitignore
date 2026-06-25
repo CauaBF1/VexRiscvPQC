@@ -55,6 +55,7 @@ tmp/
 /archive.tar.gz
 *.out32
 # liteX
+litex/*
 litex-env/
 litex/build/
 litex/**/build/
