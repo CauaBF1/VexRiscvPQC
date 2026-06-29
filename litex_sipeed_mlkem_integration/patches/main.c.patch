@@ -1,0 +1,17 @@
+diff --git a/litex/litex/soc/software/bios/main.c b/litex/litex/soc/software/bios/main.c
+--- a/litex/litex/soc/software/bios/main.c
++++ b/litex/litex/soc/software/bios/main.c
+@@
+ #include <libliteeth/mdio.h>
++
++int litex_mlkem_kat_status(void);
+@@
+ #ifdef CSR_UART_BASE
+ 	uart_init();
+ #endif
++
++	(void)litex_mlkem_kat_status();
+ 
+ #ifdef CONFIG_HAS_I2C
+ 	i2c_send_init_cmds();
+ #endif
