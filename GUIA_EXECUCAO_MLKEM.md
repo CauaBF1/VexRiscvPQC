@@ -150,206 +150,176 @@ KAT validation passed: kat_pass=0x00000001
 
 ## Rodar em FPGA
 
-O fluxo FPGA implementado neste repositório é para a **DE10-Standard** usando o Murax/VexRiscv e saída por **LEDs**. Ele não usa UART para imprimir texto na placa.
+### Como rodar usando o vlab com LiteX/Tang Primer 20K
 
-Na FPGA, o firmware é compilado com:
+Este fluxo é separado do alvo Murax/DE10-Standard. Ele usa o LiteX no diretório `litex/`, a placa **Sipeed Tang Primer 20K** e imprime o KAT/benchmark pela UART.
 
-```make
-FPGA_LED_ONLY=yes
+Entre no repositório, ative o ambiente Python e vá para o checkout do LiteX:
+
+```bash
+cd ~/VexRiscvPQC
+source litex-env/bin/activate
+cd litex
 ```
 
-Com essa flag, as chamadas de impressão são desativadas no firmware. A validação do resultado é feita pelos LEDs `LEDR[3:0]`, conectados ao `GPIO_A[3:0]` do Murax.
+Configure o `PYTHONPATH` para esse diretório. Como o `cd` está em `~/VexRiscvPQC/litex`, use exatamente:
 
-Para obter saída textual com `pk_prefix`, `ct_prefix`, `ss_match` e ciclos, use a simulação Verilator descrita na seção "Executar o benchmark normal". A execução FPGA atual serve para confirmar visualmente que o firmware roda até o fim e que o ML-KEM terminou com sucesso.
+```bash
+export PYTHONPATH=$PWD/litex:$PWD/litex-boards
+```
 
-### DE10-Standard com LEDs
+Teste se os imports do LiteX estão corretos:
 
-O alvo da DE10-Standard está em:
+```bash
+python3 -c "from litex import get_data_mod, RemoteClient; print('ok')"
+```
+
+Em um terminal separado, abra a UART. A porta validada no vlab foi `/dev/ttyUSB1`:
+
+```bash
+python3 -m litex.tools.litex_term /dev/ttyUSB1 --speed 115200
+```
+
+Se o `litex_term` corromper a saída ou perder conexão durante reset/load, use modo raw:
+
+```bash
+python3 -m serial.tools.miniterm /dev/ttyUSB1 115200 --raw
+```
+
+No terminal de build/load, configure o Gowin:
+
+```bash
+export GOWIN_HOME=/var/local/Gowin_V1.9.10.03_Education_linux/IDE
+export PATH=$GOWIN_HOME/bin:$PATH
+export LD_PRELOAD=/lib/x86_64-linux-gnu/libfreetype.so.6
+```
+
+Opcionalmente confira se o `gw_sh` está no `PATH`:
+
+```bash
+which gw_sh
+```
+
+Limpe o build anterior da Tang Primer 20K:
+
+```bash
+rm -rf build/sipeed_tang_primer_20k
+```
+
+Compile e carregue o bitstream:
+
+```bash
+python3 -m litex_boards.targets.sipeed_tang_primer_20k \
+  --cpu-type=vexriscv \
+  --cpu-variant=minimal \
+  --uart-name=serial \
+  --bios-console=disable \
+  --bios-lto \
+  --bios-no-ansi \
+  --bios-stack-margin=0x4000 \
+  --integrated-rom-size=0xc000 \
+  --integrated-sram-size=0x8000 \
+  --integrated-main-ram-size=0x100 \
+  --build \
+  --load
+```
+
+Observações importantes:
+
+- Cada terminal SSH tem ambiente separado. Exporte o `PYTHONPATH` no terminal da UART e no terminal do build, se os dois forem usados.
+- `--integrated-main-ram-size=0x100` evita ativar a DDR/LiteDRAM do alvo LiteX. Usar `0x0` ativa o caminho com DRAM.
+- `--integrated-sram-size=0x8000` deixa margem suficiente para o ML-KEM-512 e para a stack no Tang Primer 20K.
+- A saída esperada pela UART deve terminar com `KAT PASS`.
+
+Exemplo de métricas esperadas, com clock de 48 MHz:
 
 ```text
-scripts/Murax/de10_standard/
+[MLKEM] bench_clock_hz=48000000
+[MLKEM] bench_keypair_cycles=...
+[MLKEM] bench_encaps_cycles=...
+[MLKEM] bench_decaps_cycles=...
+[MLKEM] KAT PASS
 ```
 
-Ele gera:
+Para converter ciclos em tempo:
 
 ```text
-scripts/Murax/de10_standard/output_files/MuraxDe10Standard.sof
+tempo_segundos = cycles / 48000000
+tempo_ms = cycles * 1000 / 48000000
 ```
 
-O wrapper da placa conecta:
+Esperado na UART:
 
 ```text
-CLOCK_50  -> clock principal do Murax
-KEY0      -> reset assíncrono, ativo em nível baixo
-LEDR[3:0] -> GPIO_A[3:0]
-LEDR[9:4] -> 0
+[MLKEM] ML-KEM-512 KAT start
+[MLKEM] keypair coins[0..3]=99 c8 fd b4
+[MLKEM] enc coins[0..3]=b9 11 21 76
+[MLKEM] bench_clock_hz=48000000
+[MLKEM] status=0x000001
+[MLKEM] status=0x000002
+[MLKEM] keypair: ok
+[MLKEM] bench_keypair_cycles=12639106
+[MLKEM] status=0x000003
+[MLKEM] encaps: ok
+[MLKEM] bench_encaps_cycles=17816772
+[MLKEM] status=0x000004
+[MLKEM] decaps: ok
+[MLKEM] bench_decaps_cycles=25247537
+[MLKEM] status=0x000009
+[MLKEM] ss self-match: ok
+[MLKEM] status=0x000005
+[MLKEM] pk match: ok
+[MLKEM] status=0x000006
+[MLKEM] sk match: ok
+[MLKEM] status=0x000007
+[MLKEM] ct match: ok
+[MLKEM] status=0x000008
+[MLKEM] ss match: ok
+[MLKEM] status=0x00f00d
+[MLKEM] KAT PASS
+
+        __   _ __      _  __
+       / /  (_) /____ | |/_/
+      / /__/ / __/ -_)>  <
+     /____/_/\__/\__/_/|_|
+
+   Build your hardware, easily!
+
+ (c) Copyright 2012-2026 Enjoy-Digital
+ (c) Copyright 2007-2015 M-Labs
+
+ BIOS built on Jun 29 2026 09:09:07
+ BIOS CRC passed (4163b97e)
+
+ LiteX git sha1: 2245d34a1
+
+--================ SoC =================--
+CPU:		VexRiscv_Min @ 48MHz
+BUS:		wishbone 32-bit data/32-bit addr
+CSR:		32-bit data big ordering
+ROM:		48.0KiB
+SRAM:		32.0KiB
+MAIN RAM:	256B
+
+--=========== Initialization ===========--
+Memtest at 0x40000000 (256B)...
+  Write: 0x40000000-0x40000100 256B   
+   Read: 0x40000000-0x40000100 256B   
+Memtest OK
+Memspeed at 0x40000000 (Sequential, 256B)...
+  Write speed: 23.3MiB/s
+   Read speed: 21.8MiB/s
+--================ Boot ================--
+Booting from serial...
+Press Q or ESC to abort boot completely.
+sL5DdSMmkekro
+Timeout
+No boot medium found
+
+--========= Done (No Console) ==========--
+
+
 ```
-
-O UART do Murax não é exportado nesse alvo. O sinal `uart_rxd` fica preso em nível idle e `uart_txd` não é ligado a pino externo.
-
-Antes de compilar, confira que o submodule do `mlkem-native` existe:
-
-```bash
-git submodule update --init --recursive
-```
-
-Compile o firmware, gere o RTL e rode a síntese/implementação no Quartus:
-
-```bash
-make -C scripts/Murax/de10_standard build \
-  RISCV_PATH=/home/borgescaua/opt/riscv-elf-multilib \
-  RISCV_NAME=riscv64-unknown-elf \
-  BENCH_ROUNDS=1
-```
-
-Se a toolchain estiver em outro caminho, ajuste apenas `RISCV_PATH`. Por exemplo:
-
-```bash
-make -C scripts/Murax/de10_standard build \
-  RISCV_PATH=/usr \
-  RISCV_NAME=riscv64-unknown-elf \
-  BENCH_ROUNDS=1
-```
-
-Se o Quartus não estiver no `PATH`, passe os binários explicitamente:
-
-```bash
-make -C scripts/Murax/de10_standard build \
-  RISCV_PATH=/home/borgescaua/opt/riscv-elf-multilib \
-  RISCV_NAME=riscv64-unknown-elf \
-  QUARTUS_SH=/caminho/para/quartus_sh
-```
-
-Grave a FPGA:
-
-```bash
-make -C scripts/Murax/de10_standard program
-```
-
-Se houver mais de um cabo JTAG, escolha o cabo com `CABLE`:
-
-```bash
-jtagconfig
-make -C scripts/Murax/de10_standard program CABLE=1
-```
-
-Se o comando `jtagconfig` mostrar:
-
-```text
-No JTAG hardware available
-```
-
-primeiro confira se o Linux detectou o USB-Blaster:
-
-```bash
-lsusb | grep -i -E 'altera|09fb|blaster'
-```
-
-Se aparecer um dispositivo Altera, por exemplo `09fb:6010`, mas o `jtagconfig` continuar sem listar hardware, o problema pode ser permissão do USB-Blaster. Crie uma regra `udev`:
-
-```bash
-sudo tee /etc/udev/rules.d/51-usbblaster.rules >/dev/null <<'EOF'
-SUBSYSTEM=="usb", ATTR{idVendor}=="09fb", MODE="0666", TAG+="uaccess"
-EOF
-```
-
-Recarregue as regras e reconecte o cabo USB-Blaster:
-
-```bash
-sudo udevadm control --reload-rules
-sudo udevadm trigger
-```
-
-Depois reinicie o daemon JTAG e teste novamente:
-
-```bash
-sudo killall jtagd 2>/dev/null
-jtagd
-jtagconfig
-```
-
-O resultado esperado na DE10-Standard é algo parecido com:
-
-```text
-1) DE-SoC [...]
-  4BA00477   SOCVHPS
-  02D020DD   5CSEBA6...
-```
-
-Na DE10-Standard, a cadeia JTAG normalmente mostra primeiro o HPS e depois a FPGA. Por isso o Makefile programa o `.sof` no índice `@2` e pula o HPS com:
-
-```make
-HPS_DEVICE ?= SOCVHPS
-FPGA_DEVICE_INDEX ?= 2
-```
-
-### Significado dos LEDs
-
-Durante a execução normal:
-
-```text
-LEDR[0] = 1    firmware iniciou
-LEDR[1] = 1    keypair em execução
-LEDR[2] = 1    encapsulation em execução
-LEDR[3] = 1    decapsulation em execução ou falha final
-LEDR[3:0] = 1111    execução terminou com sucesso
-```
-
-O estado final esperado é:
-
-```text
-LEDR[3:0] = 1111
-```
-
-Isso significa que:
-
-```text
-mlkem_keypair retornou 0
-mlkem_enc retornou 0
-mlkem_dec retornou 0
-ss1 e ss2 são iguais
-```
-
-Se o estado final ficar em:
-
-```text
-LEDR[3:0] = 1000
-```
-
-então houve falha em algum retorno ou o shared secret não bateu.
-
-### Rodar KAT na FPGA
-
-Para gravar o firmware KAT na DE10-Standard em vez do benchmark normal:
-
-```bash
-make -C scripts/Murax/de10_standard kat-program \
-  RISCV_PATH=/home/borgescaua/opt/riscv-elf-multilib \
-  RISCV_NAME=riscv64-unknown-elf
-```
-
-Esse comando:
-
-- gera `kat_vectors.h` a partir do submodule `external/mlkem-native`;
-- compila o firmware com `KAT=yes`;
-- compila com `FPGA_LED_ONLY=yes`;
-- regenera o RTL do Murax para a DE10-Standard;
-- roda o Quartus;
-- grava o `.sof` na FPGA.
-
-Como a saída da FPGA é por LEDs, não há impressão do `kat_pass` na placa. O estado final esperado também é:
-
-```text
-LEDR[3:0] = 1111
-```
-
-No KAT, esse estado indica que `pk`, `sk`, `ct` e `ss` bateram byte-a-byte com os vetores gerados.
-
-### Outros alvos FPGA
-
-O repositório também contém diretórios antigos para Arty A7 e iCE40 HX8K. Eles servem como referência de fluxo FPGA, mas não são o caminho pronto para o ML-KEM-512 atual.
-
-O firmware atual usa 128 KiB de RAM no Murax. Portanto, qualquer outro alvo precisa ser adaptado para usar o firmware `crystal_kyber.hex`, RAM suficiente e o mapeamento de saída desejado.
 
 ## Comandos úteis
 
